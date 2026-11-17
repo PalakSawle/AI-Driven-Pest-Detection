@@ -21,6 +21,8 @@ Usage (Kaggle, dataset "parserpixy/ip102-dataset" attached as input — same IP1
 """
 import argparse
 import hashlib
+import io
+import os
 import json
 import random
 import shutil
@@ -115,14 +117,26 @@ def main():
 
     from PIL import Image
 
-    images = {p.name: p for p in work.rglob("*.jpg")}
-    xmls = list(work.rglob("*.xml"))
-    print(f"found {len(images)} jpg, {len(xmls)} xml")
+    images, xmls, seen_real = {}, [], set()
+    for root, _dirs, files in os.walk(work, followlinks=False):
+        for fn in files:
+            fp = Path(root) / fn
+            real = os.path.realpath(fp)
+            if real in seen_real:
+                continue
+            seen_real.add(real)
+            if fn.lower().endswith(".jpg"):
+                images.setdefault(fn, fp)
+            elif fn.lower().endswith(".xml"):
+                xmls.append(fp)
+    print(f"found {len(images)} jpg, {len(xmls)} xml", flush=True)
 
     # Detect whether numeric labels are 0- or 1-based.
     raw_labels = Counter()
     parsed = []
-    for x in xmls:
+    for k, x in enumerate(xmls):
+        if k % 2000 == 0:
+            print(f"  parsed {k}/{len(xmls)} xml", flush=True)
         try:
             parsed.append((x, *parse_voc(x)))
         except Exception as e:  # malformed XML
@@ -140,21 +154,26 @@ def main():
     stats = Counter()
     records = {}  # stem -> (img_path, w, h, [(cls, cx, cy, bw, bh)])
     hashes = {}
+    n_done = 0
     for x, fname, w, h, objs in parsed:
         stem = Path(fname or x.stem).stem
         img = images.get(f"{stem}.jpg") or images.get(fname or "")
         if img is None:
             stats["missing_image"] += 1
             continue
+        if n_done % 2000 == 0:
+            print(f"  validated {n_done}/{len(parsed)} annotations", flush=True)
+        n_done += 1
         try:
-            with Image.open(img) as im:
+            raw = img.read_bytes()
+            with Image.open(io.BytesIO(raw)) as im:
                 im.verify()
-            with Image.open(img) as im:
+            with Image.open(io.BytesIO(raw)) as im:
                 w, h = im.size
         except Exception:
             stats["corrupt_image"] += 1
             continue
-        digest = hashlib.sha1(img.read_bytes()).hexdigest()
+        digest = hashlib.sha1(raw).hexdigest()
         if digest in hashes:
             stats["duplicate_image"] += 1
             continue
@@ -177,13 +196,15 @@ def main():
         if not boxes:
             stats["no_valid_boxes"] += 1
             continue
-        records[stem] = (img, w, h, boxes)
+        records[stem] = (raw, w, h, boxes)
     print("cleaning stats:", dict(stats), "kept:", len(records))
 
     # Official split lists if present
-    def read_list(pattern):
-        for p in work.rglob(pattern):
-            return {l.strip() for l in p.read_text().split() if l.strip()}
+    def read_list(name):
+        for root, _d, files in os.walk(work, followlinks=False):
+            if name in files:
+                p = Path(root) / name
+                return {l.strip() for l in p.read_text().split() if l.strip()}
         return None
 
     trainval, test = read_list("trainval.txt"), read_list("test.txt")
@@ -224,7 +245,7 @@ def main():
             continue
         (out / "images" / sp).mkdir(parents=True, exist_ok=True)
         (out / "labels" / sp).mkdir(parents=True, exist_ok=True)
-        shutil.copy2(img, out / "images" / sp / f"{s}.jpg")
+        (out / "images" / sp / f"{s}.jpg").write_bytes(img)
         (out / "labels" / sp / f"{s}.txt").write_text(
             "\n".join(f"{c} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}" for c, cx, cy, bw, bh in boxes))
         per_split_imgs[sp] += 1

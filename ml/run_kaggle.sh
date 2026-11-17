@@ -7,8 +7,9 @@ cd /kaggle/working
 W=/kaggle/working
 ML=$W/ml
 # Dataset: IP102 detection subset mirrored on Kaggle as parserpixy/ip102-dataset (VOC XML + official test split)
-if find /kaggle/input -maxdepth 6 -name test.txt 2>/dev/null | grep -q .; then
-  DATA=/kaggle/input
+TV=$(find /kaggle/input -maxdepth 5 -name trainval.txt -print -quit 2>/dev/null || true)
+if [ -n "$TV" ]; then
+  DATA=$(dirname "$TV")
 else
   DATA=$(python -c "import kagglehub; print(kagglehub.dataset_download('parserpixy/ip102-dataset'))")
 fi
@@ -18,11 +19,15 @@ nvidia-smi -L
 pip -q install "ultralytics==8.3.*" onnx onnxslim onnxruntime 2>&1 | tail -2
 
 echo "=== 1/4 prepare dataset ==="
-python $ML/dataset/prepare_ip102.py --work "$DATA" --skip-download --cache $W --out $W/ip102_yolo 2>&1 | grep -v '^    "' | tail -40
+python -u $ML/dataset/prepare_ip102.py --work "$DATA" --skip-download --cache $W --out $W/ip102_yolo
 
 echo "=== 2/4 train ==="
-python $ML/training/train.py --data $W/ip102_yolo/data.yaml --model yolo11s.pt --epochs ${EPOCHS:-35} --batch 32 \
-  --project $W/runs --name ip102_yolo11s
+NGPU=$(nvidia-smi -L | wc -l)
+DEV=0; [ "$NGPU" -ge 2 ] && DEV=0,1
+python -u $ML/training/train.py --data $W/ip102_yolo/data.yaml --model yolo11s.pt --epochs ${EPOCHS:-35} --batch 32 \
+  --device $DEV --project $W/runs --name ip102_yolo11s \
+|| { echo "multi-GPU run failed, retrying on one GPU"; python -u $ML/training/train.py --data $W/ip102_yolo/data.yaml \
+  --model yolo11s.pt --epochs ${EPOCHS:-35} --batch 32 --device 0 --project $W/runs --name ip102_yolo11s; }
 
 echo "=== 3/4 evaluate on held-out test split ==="
 python $ML/training/evaluate.py --weights $W/runs/ip102_yolo11s/weights/best.pt --data $W/ip102_yolo/data.yaml \

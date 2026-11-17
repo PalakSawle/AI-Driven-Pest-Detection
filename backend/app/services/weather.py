@@ -5,11 +5,19 @@ favours sucking pests and fungal outbreaks; heavy rain washes off sprays) and
 are labelled as advisory. If the provider is unreachable, the API returns an
 explicit 'unavailable' status — no invented values.
 """
+import logging
+import time
+from collections import defaultdict
+
 import httpx
 
 from ..config import get_settings
 
 settings = get_settings()
+log = logging.getLogger(__name__)
+_cache: dict[tuple, tuple[float, dict]] = {}
+CACHE_SECONDS = 1800
+UA = {"User-Agent": "AgriGuardAI/1.0 github.com/PalakSawle/AI-Driven-Pest-Detection"}
 
 
 class WeatherUnavailable(RuntimeError):
@@ -17,6 +25,54 @@ class WeatherUnavailable(RuntimeError):
 
 
 def fetch(lat: float, lon: float) -> dict:
+    """Live weather with a 30-min cache; Open-Meteo first, MET Norway as fallback."""
+    key = (round(lat, 2), round(lon, 2), settings.weather_provider)
+    hit = _cache.get(key)
+    if hit and time.time() - hit[0] < CACHE_SECONDS:
+        return hit[1]
+    try:
+        data = _fetch_primary(lat, lon)
+    except WeatherUnavailable as e:
+        log.warning("primary weather provider failed (%s); trying MET Norway", e)
+        try:
+            data = _fetch_metno(lat, lon)
+        except Exception as e2:
+            raise WeatherUnavailable(f"{e}; MET Norway: {e2.__class__.__name__}") from e2
+    _cache[key] = (time.time(), data)
+    return data
+
+
+def _fetch_metno(lat: float, lon: float) -> dict:
+    r = httpx.get("https://api.met.no/weatherapi/locationforecast/2.0/compact", timeout=10, headers=UA,
+                  params={"lat": round(lat, 4), "lon": round(lon, 4)})
+    r.raise_for_status()
+    ts = r.json()["properties"]["timeseries"]
+    now = ts[0]
+    inst = now["data"]["instant"]["details"]
+    nxt = now["data"].get("next_1_hours") or now["data"].get("next_6_hours") or {}
+    current = {"temperature_c": inst.get("air_temperature"), "humidity_pct": inst.get("relative_humidity"),
+               "rainfall_mm": (nxt.get("details") or {}).get("precipitation_amount", 0.0),
+               "wind_kmh": round((inst.get("wind_speed") or 0) * 3.6, 1),
+               "description": ((nxt.get("summary") or {}).get("symbol_code") or "—").replace("_", " "),
+               "time": now["time"]}
+    days = defaultdict(lambda: {"t": [], "rh": [], "rain": 0.0})
+    for row in ts:
+        d = row["time"][:10]
+        det = row["data"]["instant"]["details"]
+        days[d]["t"].append(det.get("air_temperature"))
+        days[d]["rh"].append(det.get("relative_humidity"))
+        n1 = row["data"].get("next_1_hours")
+        n6 = row["data"].get("next_6_hours")
+        if n1:  # hourly rows
+            days[d]["rain"] += n1["details"].get("precipitation_amount", 0.0)
+        elif n6:  # later rows are 6-hourly and only carry the 6 h total
+            days[d]["rain"] += n6["details"].get("precipitation_amount", 0.0)
+    daily = [{"date": d, "t_max": max(v["t"]), "t_min": min(v["t"]), "rain_mm": round(v["rain"], 1),
+              "rh_mean": round(sum(v["rh"]) / len(v["rh"]), 1)} for d, v in sorted(days.items())][:7]
+    return {"provider": "met.no", "current": current, "daily": daily, "raw": {}}
+
+
+def _fetch_primary(lat: float, lon: float) -> dict:
     try:
         if settings.weather_provider == "openweather":
             if not settings.weather_api_key:
@@ -29,7 +85,7 @@ def fetch(lat: float, lon: float) -> dict:
                        "rainfall_mm": (j.get("rain") or {}).get("1h", 0.0), "wind_kmh": round(j["wind"]["speed"] * 3.6, 1),
                        "description": j["weather"][0]["description"]}
             return {"provider": "openweather", "current": current, "daily": [], "raw": j}
-        r = httpx.get("https://api.open-meteo.com/v1/forecast", timeout=10, params={
+        r = httpx.get("https://api.open-meteo.com/v1/forecast", timeout=10, headers=UA, params={
             "latitude": lat, "longitude": lon, "timezone": "auto", "forecast_days": 7,
             "current": "temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,weather_code",
             "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,relative_humidity_2m_mean"})
@@ -45,6 +101,8 @@ def fetch(lat: float, lon: float) -> dict:
         return {"provider": "open-meteo", "current": current, "daily": daily, "raw": {"timezone": j.get("timezone")}}
     except WeatherUnavailable:
         raise
+    except httpx.HTTPStatusError as e:
+        raise WeatherUnavailable(f"Weather service returned HTTP {e.response.status_code}") from e
     except Exception as e:
         raise WeatherUnavailable(f"Weather service unreachable: {e.__class__.__name__}") from e
 

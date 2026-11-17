@@ -19,6 +19,7 @@ def main():
     ap.add_argument("--project", default="runs/agriguard")
     ap.add_argument("--name", default="ip102_yolo11s")
     ap.add_argument("--resume", default="")
+    ap.add_argument("--device", default="0", help='"0", "0,1" for 2 GPUs (DDP), or "cpu"')
     a = ap.parse_args()
 
     if a.resume:
@@ -29,7 +30,7 @@ def main():
         data=a.data, epochs=a.epochs, imgsz=a.imgsz, batch=a.batch,
         project=a.project, name=a.name, exist_ok=True,
         patience=15, save_period=5, seed=42, deterministic=False,
-        cos_lr=True, close_mosaic=5, workers=4, plots=True,
+        cos_lr=True, close_mosaic=5, workers=4, plots=True, device=a.device,
     )
 
 
