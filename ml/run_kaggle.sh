@@ -44,7 +44,9 @@ cp $W/ip102_yolo/dataset_stats.json $OUT/
 python - <<EOF
 from ultralytics import YOLO
 p = YOLO("$OUT/best.pt").export(format="onnx", imgsz=640, opset=12, simplify=True, dynamic=False)
-import shutil; shutil.copy(p, "$OUT/best.onnx"); print("onnx:", p)
+import os, shutil
+if os.path.abspath(p) != os.path.abspath("$OUT/best.onnx"): shutil.copy(p, "$OUT/best.onnx")
+print("onnx:", p)
 EOF
 cd $W && rm -f agriguard_model.zip && zip -qr agriguard_model.zip agriguard_model
 # free space: Kaggle only keeps /kaggle/working up to 20 GB
