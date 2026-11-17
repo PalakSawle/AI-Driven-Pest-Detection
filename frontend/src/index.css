@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; }
+  body { @apply bg-cream-50 text-forest-950 dark:bg-[#0b140e] dark:text-forest-50; }
+  h1, h2, h3 { @apply font-display tracking-tight; }
+  :focus-visible { @apply outline-none ring-2 ring-forest-400 ring-offset-2 ring-offset-cream-50 dark:ring-offset-[#0b140e]; }
+}
+
+@layer components {
+  .card { @apply rounded-2xl border border-forest-900/[.07] bg-white shadow-soft dark:border-white/[.07] dark:bg-[#111d15]; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-primary { @apply btn bg-forest-800 text-white hover:bg-forest-700 active:bg-forest-900 dark:bg-forest-500 dark:hover:bg-forest-400 dark:text-forest-950; }
+  .btn-ghost { @apply btn text-forest-800 hover:bg-forest-100 dark:text-forest-100 dark:hover:bg-white/5; }
+  .btn-outline { @apply btn border border-forest-900/15 bg-white text-forest-900 hover:bg-forest-50 dark:border-white/10 dark:bg-transparent dark:text-forest-50 dark:hover:bg-white/5; }
+  .input { @apply w-full rounded-xl border border-forest-900/15 bg-white px-3.5 py-2.5 text-sm placeholder:text-forest-900/40 focus:border-forest-500 focus:outline-none focus:ring-4 focus:ring-forest-500/15 dark:border-white/10 dark:bg-white/5 dark:placeholder:text-white/30; }
+  .label { @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-forest-900/60 dark:text-forest-100/60; }
+  .muted { @apply text-forest-900/60 dark:text-forest-100/60; }
+  .chip { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold; }
+}
+
+.prose-chat p { margin: .35rem 0; }
+.prose-chat ul, .prose-chat ol { margin: .35rem 0 .35rem 1.1rem; }
+.prose-chat ul { list-style: disc; }
+.prose-chat ol { list-style: decimal; }
+.grain { background-image: radial-gradient(rgba(27,55,35,.06) 1px, transparent 1px); background-size: 18px 18px; }
