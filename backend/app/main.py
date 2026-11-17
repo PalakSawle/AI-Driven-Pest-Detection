@@ -40,6 +40,11 @@ def bootstrap():
             db.add(User(email=settings.admin_email.lower(), hashed_password=hash_password(settings.admin_password),
                         full_name="Administrator", role="admin"))
         db.commit()
+    try:
+        from .services.storage import ensure_bucket
+        ensure_bucket()
+    except Exception as e:  # don't block startup; uploads will report the error
+        log.error("Storage bucket check failed: %s", e)
     if not detector.is_available():
         log.warning("Model weights missing at %s — /api/detections/analyze will return 503 until they are added.",
                     settings.model_path)

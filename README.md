@@ -123,8 +123,10 @@ Then copy `best.onnx` and `model_meta.json` from `agriguard_model.zip` into `bac
 
 ## Deploy
 
-1. **Supabase**: new project → SQL editor: run `backend/migrations/001_initial_postgres.sql`, then `002_supabase_rls_and_storage.sql`.
-   Copy the Postgres connection URI and the `service_role` key.
+1. **Supabase**: new project (region Mumbai). No manual SQL needed — on every start the API runs `alembic upgrade head`
+   (creates all tables + indexes and enables RLS on every table) and creates the private `detections` storage bucket.
+   (`backend/migrations/001_initial_postgres.sql` / `002_…sql` are the same schema as plain SQL, if you prefer the SQL editor.)
+   Copy **Connect → Session pooler** URI (IPv4 — Render cannot reach the IPv6-only direct host) and the `service_role` key.
 2. **Render**: New → Web Service → this repo, root `backend`, Docker. Env vars from `backend/.env.example`
    (`DATABASE_URL`, `JWT_SECRET`, `STORAGE_BACKEND=supabase`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `CORS_ORIGINS=https://<your-app>.vercel.app`, `FRONTEND_URL`, optional `LLM_*`, `SMTP_*`, `ADMIN_*`).
 3. **Vercel**: import repo, root `frontend`, env `VITE_API_URL=https://<your-api>.onrender.com`.
